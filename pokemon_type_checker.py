@@ -1,119 +1,147 @@
 import streamlit as st
 import requests
+from rapidfuzz import process
 import pandas as pd
 import plotly.express as px
-from thefuzz import process
 
-# --- 1. ตั้งค่าและ Data Dictionaries ---
-st.set_page_config(page_title="Pokémon Pokedex", page_icon="🔴", layout="wide")
-
-# พจนานุกรมแปล Ability (ตัวอย่าง)
-ABILITY_THAI_DICT = {
-    "overgrow": "เพิ่มพลังท่าธาตุพืชเมื่อ HP เหลือน้อยกว่า 1/3",
-    "blaze": "เพิ่มพลังท่าธาตุไฟเมื่อ HP เหลือน้อยกว่า 1/3",
-    "torrent": "เพิ่มพลังท่าธาตุน้ำเมื่อ HP เหลือน้อยกว่า 1/3",
-    "intimidate": "เมื่อลงสนาม จะลดพลังโจมตี (Attack) ของคู่ต่อสู้ลง 1 ระดับ"
-}
-
-# ท่ายอดนิยม (Meta Moves - ตัวอย่าง)
-META_MOVES = {
-    "charizard": {"roost": "ใช้ฟื้นฟู HP ได้ดี", "flare-blitz": "ท่าโจมตีหลักที่รุนแรงมาก"},
-    "pikachu": {"volt-tackle": "ท่าเฉพาะที่รุนแรงที่สุด", "fake-out": "ใช้ขัดจังหวะศัตรูในเทิร์นแรก"}
-}
-
-# --- 2. ฟังก์ชันดึงข้อมูล (Cache เพื่อความเร็ว) ---
+# -----------------------------
+# โหลดรายชื่อ Pokémon
+# -----------------------------
 @st.cache_data
-def get_all_pokemon_names():
+def load_pokemon_list():
     url = "https://pokeapi.co/api/v2/pokemon?limit=1000"
-    res = requests.get(url).json()
-    return [p['name'] for p in res['results']]
+    data = requests.get(url).json()
+    return [p["name"] for p in data["results"]]
 
-@st.cache_data
-def get_pokemon_data(name):
-    url = f"https://pokeapi.co/api/v2/pokemon/{name.lower()}"
-    res = requests.get(url)
-    if res.status_code == 200:
-        return res.json()
-    return None
+pokemon_list = load_pokemon_list()
 
-# --- 3. UI Component: Search & Detail View ---
-st.title("🔴 Pokémon Dex: Fuzzy Search")
+# -----------------------------
+# Fuzzy Search
+# -----------------------------
+def fuzzy_search(query, choices, limit=5):
+    results = process.extract(query, choices, limit=limit)
+    return [r[0] for r in results]
 
-pokemon_list = get_all_pokemon_names()
-search_query = st.text_input("🔍 พิมพ์ชื่อ Pokémon (พิมพ์ผิดนิดหน่อยก็หาเจอ เช่น Pika, Charzard)", "")
+# -----------------------------
+# Type Chart (18 types simplified)
+# -----------------------------
+type_chart = {
+    "fire": {"weak": ["water", "rock", "ground"], "strong": ["grass", "ice", "bug", "steel"], "immune": []},
+    "water": {"weak": ["electric", "grass"], "strong": ["fire", "rock", "ground"], "immune": []},
+    "electric": {"weak": ["ground"], "strong": ["water", "flying"], "immune": []},
+    "grass": {"weak": ["fire", "ice", "poison", "flying", "bug"], "strong": ["water", "rock", "ground"], "immune": []},
+    "ground": {"weak": ["water", "grass", "ice"], "strong": ["fire", "electric", "poison", "rock", "steel"], "immune": ["electric"]},
+    "rock": {"weak": ["water", "grass", "fighting", "ground", "steel"], "strong": ["fire", "ice", "flying", "bug"], "immune": []},
+    "ice": {"weak": ["fire", "fighting", "rock", "steel"], "strong": ["grass", "ground", "flying", "dragon"], "immune": []},
+    "fighting": {"weak": ["psychic", "flying", "fairy"], "strong": ["normal", "ice", "rock", "dark", "steel"], "immune": []},
+    "psychic": {"weak": ["bug", "ghost", "dark"], "strong": ["fighting", "poison"], "immune": []},
+    "dark": {"weak": ["fighting", "bug", "fairy"], "strong": ["psychic", "ghost"], "immune": ["psychic"]},
+    "ghost": {"weak": ["ghost", "dark"], "strong": ["psychic", "ghost"], "immune": ["normal", "fighting"]},
+    "dragon": {"weak": ["ice", "dragon", "fairy"], "strong": ["dragon"], "immune": []},
+    "steel": {"weak": ["fire", "fighting", "ground"], "strong": ["ice", "rock", "fairy"], "immune": ["poison"]},
+    "fairy": {"weak": ["poison", "steel"], "strong": ["fighting", "dragon", "dark"], "immune": ["dragon"]},
+    "poison": {"weak": ["ground", "psychic"], "strong": ["grass", "fairy"], "immune": []},
+    "bug": {"weak": ["fire", "flying", "rock"], "strong": ["grass", "psychic", "dark"], "immune": []},
+    "flying": {"weak": ["electric", "ice", "rock"], "strong": ["grass", "fighting", "bug"], "immune": ["ground"]},
+    "normal": {"weak": ["fighting"], "strong": [], "immune": ["ghost"]},
+}
 
-selected_pokemon = None
+def calculate_effectiveness(types):
+    weaknesses, strengths, immunities = {}, {}, set()
+    for t in types:
+        chart = type_chart.get(t, {})
+        for w in chart.get("weak", []):
+            weaknesses[w] = weaknesses.get(w, 1) * 2
+        for s in chart.get("strong", []):
+            strengths[s] = strengths.get(s, 1) * 2
+        for i in chart.get("immune", []):
+            immunities.add(i)
+    return weaknesses, strengths, immunities
 
-# Fuzzy Search Logic
-if search_query:
-    # หาชื่อที่ใกล้เคียงที่สุด 5 อันดับแรก
-    matches = process.extract(search_query.lower(), pokemon_list, limit=5)
-    
-    # แสดง Dropdown ให้ผู้ใช้คลิกเลือก
-    match_names = [m[0] for m in matches if m[1] > 50] # เอาเฉพาะที่ความเหมือน > 50%
-    if match_names:
-        selected_pokemon = st.selectbox("💡 คุณหมายถึงตัวไหน?", match_names)
-    else:
-        st.warning("❌ ไม่พบ Pokémon ที่ใกล้เคียง")
+# -----------------------------
+# UI
+# -----------------------------
+st.title("🔍 Pokémon Fuzzy Search System")
 
-# หากมีการเลือก Pokémon
-if selected_pokemon:
-    with st.spinner('Loading Pokémon Data...'):
-        data = get_pokemon_data(selected_pokemon)
-        
-    if data:
-        # --- จัด Layout เป็น 2 คอลัมน์ ---
-        col1, col2 = st.columns([1, 2])
-        
-        with col1:
-            # 2.1 ข้อมูลพื้นฐาน
-            st.image(data['sprites']['other']['official-artwork']['front_default'], width=300)
-            st.subheader(data['name'].capitalize())
-            types = [t['type']['name'].capitalize() for t in data['types']]
-            st.write(f"**Type:** {' / '.join(types)}")
-            
-            # 2.2 ธาตุที่แพ้ทาง (Simplified Example)
-            # หมายเหตุ: การคำนวณแพ้ธาตุจริงๆ ต้องดึง Type Chart มาไขว้กัน
-            st.write("**⚠️ Weaknesses (ตัวอย่าง):**")
-            st.info("Water (2x), Ground (2x), Rock (4x)") 
-            
-        with col2:
-            # 2.3 ค่าสถานะ (Stats) - Radar Chart
-            st.write("### 📊 Base Stats")
-            stats_data = {s['stat']['name']: s['base_stat'] for s in data['stats']}
-            
-            # สร้าง Radar Chart ด้วย Plotly
-            df = pd.DataFrame(dict(
-                r=list(stats_data.values()),
-                theta=['HP', 'Attack', 'Defense', 'Sp. Atk', 'Sp. Def', 'Speed']
-            ))
-            fig = px.line_polar(df, r='r', theta='theta', line_close=True)
-            fig.update_traces(fill='toself', line_color='#FF4B4B')
-            st.plotly_chart(fig, use_container_width=True)
+query = st.text_input("ค้นหา Pokémon")
+selected = None
 
-        st.divider()
-        
-        # 2.4 Ability
-        st.write("### ⭐ Abilities")
-        for ab in data['abilities']:
-            ab_name = ab['ability']['name'].lower()
-            is_hidden = " (Hidden)" if ab['is_hidden'] else ""
-            thai_desc = ABILITY_THAI_DICT.get(ab_name, "อยู่ระหว่างการแปล...")
-            
-            st.markdown(f"- **{ab_name.capitalize()}{is_hidden}**: {thai_desc}")
+if query:
+    suggestions = fuzzy_search(query, pokemon_list)
+    selected = st.selectbox("Suggestions", suggestions)
 
-        st.divider()
-        
-        # 2.5 Moves
-        st.write("### ⚔️ Moves")
-        meta_moves_dict = META_MOVES.get(selected_pokemon, {})
-        
-        if meta_moves_dict:
-            st.success("**🔥 Current Meta Moves (ท่าที่นิยมใช้)**")
-            for move, reason in meta_moves_dict.items():
-                st.write(f"- **{move.capitalize()}**: {reason}")
+if selected:
+    st.header(f"📖 {selected.capitalize()}")
 
-        # Expanders สำหรับท่าทั้งหมดเพื่อไม่ให้รกหน้าจอ
-        with st.expander("ดูท่าทั้งหมด (All Moves)"):
-            all_moves = [m['move']['name'] for m in data['moves']]
-            st.write(", ".join(all_moves))
+    # ดึงข้อมูลจาก PokeAPI
+    url = f"https://pokeapi.co/api/v2/pokemon/{selected}"
+    data = requests.get(url).json()
+
+    # -----------------------------
+    # ข้อมูลพื้นฐาน
+    # -----------------------------
+    st.image(data["sprites"]["front_default"], width=150)
+    types = [t["type"]["name"] for t in data["types"]]
+    st.write("ประเภท:", ", ".join(types))
+
+    # -----------------------------
+    # Type Effectiveness
+    # -----------------------------
+    st.subheader("⚔️ Type Effectiveness")
+    weaknesses, strengths, immunities = calculate_effectiveness(types)
+
+    st.write("**แพ้ทาง (Weaknesses):**")
+    for w, mult in weaknesses.items():
+        st.markdown(f"- {w} ({mult}x)")
+
+    st.write("**ชนะทาง (Strengths):**")
+    for s, mult in strengths.items():
+        st.markdown(f"- {s} ({mult}x)")
+
+    if immunities:
+        st.write("**ไม่โดน (Immunities):**")
+        for i in immunities:
+            st.markdown(f"- {i} (0x)")
+
+    # -----------------------------
+    # Stats
+    # -----------------------------
+    st.subheader("📊 Stats")
+    stats = {s["stat"]["name"]: s["base_stat"] for s in data["stats"]}
+    df_stats = pd.DataFrame.from_dict(stats, orient="index", columns=["Value"])
+    st.bar_chart(df_stats)
+
+    fig = px.line_polar(df_stats, r="Value", theta=df_stats.index, line_close=True)
+    st.plotly_chart(fig)
+
+    # -----------------------------
+    # Ability
+    # -----------------------------
+    st.subheader("✨ Abilities")
+    for ab in data["abilities"]:
+        st.write(f"- {ab['ability']['name']} (คำอธิบาย: ... )")
+
+    # -----------------------------
+    # Moves
+    # -----------------------------
+    st.subheader("🎯 Moves")
+    moves = [m["move"]["name"] for m in data["moves"]]
+    st.write("**ทั้งหมด:**", ", ".join(moves[:30]))
+
+    # Highlight Meta Moves (ตัวอย่าง mock)
+    st.write("**Meta Moves:**")
+    meta_moves = [
+        {"name": "Thunderbolt", "reason": "ดาเมจสูง + ครอบคลุม Water"},
+        {"name": "Earthquake", "reason": "ครอบคลุมหลายธาตุ + Physical"},
+        {"name": "Dragon Dance", "reason": "Utility: เพิ่ม Attack + Speed"},
+    ]
+    for m in meta_moves:
+        st.markdown(f"- {m['name']} → {m['reason']}")
+
+# -----------------------------
+# Optional Features
+# -----------------------------
+st.sidebar.title("⚙️ Options")
+st.sidebar.checkbox("Dark Mode")
+st.sidebar.checkbox("Favorite System")
+st.sidebar.checkbox("Compare Pokémon")
