@@ -1,127 +1,111 @@
 import streamlit as st
-from dataclasses import dataclass
-from typing import Callable
+import requests
 
-# =========================
-# TYPE CHART
-# =========================
-CHART = {
-    "Normal": {"Rock": 0.5, "Ghost": 0.0, "Steel": 0.5},
-    "Fire": {"Fire": 0.5, "Water": 0.5, "Grass": 2.0, "Ice": 2.0, "Bug": 2.0,
-             "Rock": 0.5, "Dragon": 0.5, "Steel": 2.0},
-    "Water": {"Fire": 2.0, "Water": 0.5, "Grass": 0.5, "Ground": 2.0,
-              "Rock": 2.0, "Dragon": 0.5},
-    "Electric": {"Water": 2.0, "Electric": 0.5, "Grass": 0.5, "Ground": 0.0,
-                 "Flying": 2.0, "Dragon": 0.5},
-    "Grass": {"Fire": 0.5, "Water": 2.0, "Grass": 0.5, "Poison": 0.5,
-              "Ground": 2.0, "Flying": 0.5, "Bug": 0.5, "Rock": 2.0,
-              "Dragon": 0.5, "Steel": 0.5},
-    "Ice": {"Water": 0.5, "Grass": 2.0, "Ice": 0.5, "Ground": 2.0,
-            "Flying": 2.0, "Dragon": 2.0, "Steel": 0.5},
-    "Fighting": {"Normal": 2.0, "Ice": 2.0, "Rock": 2.0, "Dark": 2.0, "Steel": 2.0},
-    "Ground": {"Fire": 2.0, "Electric": 2.0, "Flying": 0.0, "Steel": 2.0},
-    "Flying": {"Grass": 2.0, "Fighting": 2.0, "Bug": 2.0},
-    "Psychic": {"Fighting": 2.0, "Poison": 2.0},
-    "Rock": {"Fire": 2.0, "Ice": 2.0, "Flying": 2.0},
-    "Ghost": {"Ghost": 2.0, "Psychic": 2.0},
-    "Dragon": {"Dragon": 2.0},
-    "Dark": {"Ghost": 2.0, "Psychic": 2.0},
-    "Steel": {"Ice": 2.0, "Rock": 2.0},
-    "Fairy": {"Dragon": 2.0, "Dark": 2.0},
+st.set_page_config(page_title="Pokédex Pro", layout="centered")
+
+st.title("📱 Pokédex Pro")
+
+name = st.text_input("🔍 Search Pokémon")
+
+# -------------------------
+# TYPE CHART (ครบขึ้น)
+# -------------------------
+TYPE_CHART = {
+    "fire": {"water": 2, "rock": 2, "ground": 2},
+    "water": {"electric": 2, "grass": 2},
+    "grass": {"fire": 2, "ice": 2, "flying": 2, "bug": 2},
+    "electric": {"ground": 2},
+    "rock": {"water": 2, "grass": 2, "fighting": 2},
 }
 
-ALL_TYPES = sorted(CHART.keys())
+def get_weakness(types):
+    result = {}
+    for atk, targets in TYPE_CHART.items():
+        mult = 1
+        for t in types:
+            if t in targets:
+                mult *= targets[t]
+        if mult > 1:
+            result[atk] = mult
+    return result
 
-# =========================
-# ABILITIES (FIXED)
-# =========================
-AbilityHandler = Callable[[str, float], float]
+# -------------------------
+# FETCH HELPERS
+# -------------------------
+def get_pokemon(name):
+    return requests.get(f"https://pokeapi.co/api/v2/pokemon/{name.lower()}").json()
 
-@dataclass
-class Ability:
-    name: str
-    handler: AbilityHandler
+def get_species(url):
+    return requests.get(url).json()
 
-def immune(t):
-    return lambda atk, mult: 0.0 if atk == t else mult
+def get_evolution(url):
+    return requests.get(url).json()
 
-def modify(t, factor):
-    return lambda atk, mult: mult * factor if atk == t else mult
+# -------------------------
+# MAIN
+# -------------------------
+if st.button("Search") and name:
 
-DEF_ABILITIES = {
-    "Levitate": Ability("Levitate", immune("Ground")),
-    "Volt Absorb": Ability("Volt Absorb", immune("Electric")),
-    "Water Absorb": Ability("Water Absorb", immune("Water")),
-    "Flash Fire": Ability("Flash Fire", immune("Fire")),
-    "Thick Fat": Ability("Thick Fat", lambda atk, m: m*0.5 if atk in ["Fire","Ice"] else m),
-    "Filter": Ability("Filter", lambda atk, m: m*0.75 if m>1 else m),
-    "Solid Rock": Ability("Solid Rock", lambda atk, m: m*0.75 if m>1 else m),
-}
+    try:
+        data = get_pokemon(name)
 
-ATK_ABILITIES = {
-    "Scrappy": Ability("Scrappy", lambda atk, m: 1.0 if atk in ["Normal","Fighting"] and m==0 else m),
-    "Tinted Lens": Ability("Tinted Lens", lambda atk, m: m*2 if m<1 else m),
-}
+        # BASIC
+        st.subheader(data["name"].title())
+        st.image(data["sprites"]["front_default"], width=150)
 
-# =========================
-# CALC
-# =========================
-def get_mult(atk, d1, d2):
-    m = CHART.get(atk, {}).get(d1, 1)
-    if d2:
-        m *= CHART.get(atk, {}).get(d2, 1)
-    return m
+        # TYPES
+        types = [t["type"]["name"] for t in data["types"]]
+        st.markdown(f"**Type:** {' / '.join(types)}")
 
-def calc(d1, d2, def_ab, atk_ab):
-    results = {}
+        # WEAKNESS
+        weak = get_weakness(types)
+        if weak:
+            st.markdown("**Weakness:**")
+            for k, v in weak.items():
+                st.write(f"- {k} ({v}x)")
 
-    for atk in ALL_TYPES:
-        mult = get_mult(atk, d1, d2)
+        # STATS
+        st.markdown("### 📊 Stats")
+        for s in data["stats"]:
+            st.write(f"{s['stat']['name'].upper()}: {s['base_stat']}")
 
-        if atk_ab:
-            mult = atk_ab.handler(atk, mult)
+        # ABILITIES
+        st.markdown("### ✨ Abilities")
+        for a in data["abilities"]:
+            name = a["ability"]["name"]
+            hidden = " (Hidden)" if a["is_hidden"] else ""
+            st.write(f"- {name}{hidden}")
 
-        if def_ab:
-            mult = def_ab.handler(atk, mult)
+        # MOVES
+        st.markdown("### ⚔️ Moves")
+        moves = [m["move"]["name"] for m in data["moves"]]
 
-        results[atk] = round(mult, 2)
+        col1, col2 = st.columns(2)
 
-    return results
+        with col1:
+            st.write("**Top Moves:**")
+            st.write(", ".join(moves[:10]))
 
-# =========================
-# UI
-# =========================
-st.set_page_config(page_title="Pokemon Type Checker", layout="centered")
+        with col2:
+            strong = [m for m in moves if any(x in m for x in ["beam","blast","punch","bolt"])]
+            st.write("🔥 **Recommended:**")
+            st.write(", ".join(strong[:10]))
 
-st.title("⚡ Pokemon Type Checker (Mobile UI)")
+        # EVOLUTION
+        st.markdown("### 🌱 Evolution")
 
-col1, col2 = st.columns(2)
+        species = get_species(data["species"]["url"])
+        evo = get_evolution(species["evolution_chain"]["url"])
 
-with col1:
-    type1 = st.selectbox("Type 1", ALL_TYPES)
+        def parse_chain(chain):
+            result = []
+            while chain:
+                result.append(chain["species"]["name"])
+                chain = chain["evolves_to"][0] if chain["evolves_to"] else None
+            return result
 
-with col2:
-    type2 = st.selectbox("Type 2 (optional)", ["None"] + ALL_TYPES)
+        evo_list = parse_chain(evo["chain"])
+        st.write(" → ".join(evo_list))
 
-def_ab = st.selectbox("Defender Ability", ["None"] + list(DEF_ABILITIES.keys()))
-atk_ab = st.selectbox("Attacker Ability", ["None"] + list(ATK_ABILITIES.keys()))
-
-if st.button("Calculate"):
-    d2 = None if type2 == "None" else type2
-    da = DEF_ABILITIES.get(def_ab)
-    aa = ATK_ABILITIES.get(atk_ab)
-
-    result = calc(type1, d2, da, aa)
-
-    st.subheader("Result")
-
-    buckets = {}
-    for t, m in result.items():
-        buckets.setdefault(m, []).append(t)
-
-    order = [4,2,1,0.5,0.25,0]
-
-    for m in order:
-        if m in buckets:
-            st.markdown(f"### {m}x")
-            st.write(", ".join(buckets[m]))
+    except:
+        st.error("Pokemon not found")
