@@ -2,7 +2,6 @@ import streamlit as st
 import requests
 from rapidfuzz import process
 import pandas as pd
-import plotly.express as px
 
 # -----------------------------
 # โหลดรายชื่อ Pokémon
@@ -23,7 +22,7 @@ def fuzzy_search(query, choices, limit=5):
     return [r[0] for r in results]
 
 # -----------------------------
-# Type Chart (18 types simplified)
+# Type Chart (simplified 18 types)
 # -----------------------------
 type_chart = {
     "fire": {"weak": ["water", "rock", "ground"], "strong": ["grass", "ice", "bug", "steel"], "immune": []},
@@ -62,6 +61,7 @@ def calculate_effectiveness(types):
 # UI
 # -----------------------------
 st.title("🔍 Pokémon Fuzzy Search System")
+st.markdown("[ไปหน้า Compare Pokémon ➡️](compare.py)")
 
 query = st.text_input("ค้นหา Pokémon")
 selected = None
@@ -104,15 +104,12 @@ if selected:
             st.markdown(f"- {i} (0x)")
 
     # -----------------------------
-    # Stats
+    # Stats (ตารางตัวเลข)
     # -----------------------------
     st.subheader("📊 Stats")
     stats = {s["stat"]["name"]: s["base_stat"] for s in data["stats"]}
-    df_stats = pd.DataFrame.from_dict(stats, orient="index", columns=["Value"])
-    st.bar_chart(df_stats)
-
-    fig = px.line_polar(df_stats, r="Value", theta=df_stats.index, line_close=True)
-    st.plotly_chart(fig)
+    df_stats = pd.DataFrame(stats.items(), columns=["Stat", "Value"])
+    st.table(df_stats)
 
     # -----------------------------
     # Ability
@@ -137,11 +134,3 @@ if selected:
     ]
     for m in meta_moves:
         st.markdown(f"- {m['name']} → {m['reason']}")
-
-# -----------------------------
-# Optional Features
-# -----------------------------
-st.sidebar.title("⚙️ Options")
-st.sidebar.checkbox("Dark Mode")
-st.sidebar.checkbox("Favorite System")
-st.sidebar.checkbox("Compare Pokémon")
