@@ -1,186 +1,127 @@
-"""
-Pokemon Type Effectiveness Checker (Generation 6+)
-===================================================
-วิธีใช้งาน:
-    python pokemon_type_checker.py
+import streamlit as st
+from dataclasses import dataclass
+from typing import Callable
 
-    หลังจากรันโปรแกรม ระบบจะถามธาตุที่ 1 และ 2 (ไม่บังคับ)
-    โปรแกรมจะแสดงผลว่าธาตุไหนโจมตีแล้วได้ผลคูณเท่าใด
-
-ตัวอย่าง:
-    ธาตุที่ 1: Water
-    ธาตุที่ 2: Flying     (หรือกด Enter เพื่อข้าม)
-
-    ผลลัพธ์ที่ได้รับ:
-        4× → Electric
-        2× → Rock
-        ...
-"""
-
-# ---------------------------------------------------------------------------
-# ข้อมูลความสัมพันธ์ของธาตุ (Generation 6+)
-# โครงสร้าง: CHART[attacking_type][defending_type] = multiplier
-# หากไม่มีค่า → multiplier = 1 (ปกติ)
-# ---------------------------------------------------------------------------
-CHART: dict[str, dict[str, float]] = {
-    "Normal":   {"Rock": 0.5, "Ghost": 0, "Steel": 0.5},
-    "Fire":     {"Fire": 0.5, "Water": 0.5, "Grass": 2, "Ice": 2, "Bug": 2,
-                 "Rock": 0.5, "Dragon": 0.5, "Steel": 2},
-    "Water":    {"Fire": 2, "Water": 0.5, "Grass": 0.5, "Ground": 2,
-                 "Rock": 2, "Dragon": 0.5},
-    "Electric": {"Water": 2, "Electric": 0.5, "Grass": 0.5, "Ground": 0,
-                 "Flying": 2, "Dragon": 0.5},
-    "Grass":    {"Fire": 0.5, "Water": 2, "Grass": 0.5, "Poison": 0.5,
-                 "Ground": 2, "Flying": 0.5, "Bug": 0.5, "Rock": 2,
-                 "Dragon": 0.5, "Steel": 0.5},
-    "Ice":      {"Water": 0.5, "Grass": 2, "Ice": 0.5, "Ground": 2,
-                 "Flying": 2, "Dragon": 2, "Steel": 0.5},
-    "Fighting": {"Normal": 2, "Ice": 2, "Poison": 0.5, "Flying": 0.5,
-                 "Psychic": 0.5, "Bug": 0.5, "Rock": 2, "Ghost": 0,
-                 "Dark": 2, "Steel": 2, "Fairy": 0.5},
-    "Poison":   {"Grass": 2, "Poison": 0.5, "Ground": 0.5, "Rock": 0.5,
-                 "Ghost": 0.5, "Steel": 0, "Fairy": 2},
-    "Ground":   {"Fire": 2, "Electric": 2, "Grass": 0.5, "Poison": 2,
-                 "Flying": 0, "Bug": 0.5, "Rock": 2, "Steel": 2},
-    "Flying":   {"Electric": 0.5, "Grass": 2, "Fighting": 2, "Bug": 2,
-                 "Rock": 0.5, "Steel": 0.5},
-    "Psychic":  {"Fighting": 2, "Poison": 2, "Psychic": 0.5,
-                 "Dark": 0, "Steel": 0.5},
-    "Bug":      {"Fire": 0.5, "Grass": 2, "Fighting": 0.5, "Flying": 0.5,
-                 "Psychic": 2, "Ghost": 0.5, "Dark": 2, "Steel": 0.5,
-                 "Fairy": 0.5},
-    "Rock":     {"Fire": 2, "Ice": 2, "Fighting": 0.5, "Ground": 0.5,
-                 "Flying": 2, "Bug": 2, "Steel": 0.5},
-    "Ghost":    {"Normal": 0, "Psychic": 2, "Ghost": 2, "Dark": 0.5},
-    "Dragon":   {"Dragon": 2, "Steel": 0.5, "Fairy": 0},
-    "Dark":     {"Fighting": 0.5, "Psychic": 2, "Ghost": 2,
-                 "Dark": 0.5, "Fairy": 0.5},
-    "Steel":    {"Fire": 0.5, "Water": 0.5, "Electric": 0.5, "Ice": 2,
-                 "Rock": 2, "Steel": 0.5, "Fairy": 2},
-    "Fairy":    {"Fire": 0.5, "Fighting": 2, "Poison": 0.5,
-                 "Dragon": 2, "Dark": 2, "Steel": 0.5},
+# =========================
+# TYPE CHART
+# =========================
+CHART = {
+    "Normal": {"Rock": 0.5, "Ghost": 0.0, "Steel": 0.5},
+    "Fire": {"Fire": 0.5, "Water": 0.5, "Grass": 2.0, "Ice": 2.0, "Bug": 2.0,
+             "Rock": 0.5, "Dragon": 0.5, "Steel": 2.0},
+    "Water": {"Fire": 2.0, "Water": 0.5, "Grass": 0.5, "Ground": 2.0,
+              "Rock": 2.0, "Dragon": 0.5},
+    "Electric": {"Water": 2.0, "Electric": 0.5, "Grass": 0.5, "Ground": 0.0,
+                 "Flying": 2.0, "Dragon": 0.5},
+    "Grass": {"Fire": 0.5, "Water": 2.0, "Grass": 0.5, "Poison": 0.5,
+              "Ground": 2.0, "Flying": 0.5, "Bug": 0.5, "Rock": 2.0,
+              "Dragon": 0.5, "Steel": 0.5},
+    "Ice": {"Water": 0.5, "Grass": 2.0, "Ice": 0.5, "Ground": 2.0,
+            "Flying": 2.0, "Dragon": 2.0, "Steel": 0.5},
+    "Fighting": {"Normal": 2.0, "Ice": 2.0, "Rock": 2.0, "Dark": 2.0, "Steel": 2.0},
+    "Ground": {"Fire": 2.0, "Electric": 2.0, "Flying": 0.0, "Steel": 2.0},
+    "Flying": {"Grass": 2.0, "Fighting": 2.0, "Bug": 2.0},
+    "Psychic": {"Fighting": 2.0, "Poison": 2.0},
+    "Rock": {"Fire": 2.0, "Ice": 2.0, "Flying": 2.0},
+    "Ghost": {"Ghost": 2.0, "Psychic": 2.0},
+    "Dragon": {"Dragon": 2.0},
+    "Dark": {"Ghost": 2.0, "Psychic": 2.0},
+    "Steel": {"Ice": 2.0, "Rock": 2.0},
+    "Fairy": {"Dragon": 2.0, "Dark": 2.0},
 }
 
-ALL_TYPES: list[str] = sorted(CHART.keys())
+ALL_TYPES = sorted(CHART.keys())
 
+# =========================
+# ABILITIES (FIXED)
+# =========================
+AbilityHandler = Callable[[str, float], float]
 
-# ---------------------------------------------------------------------------
-# ฟังก์ชันหลัก
-# ---------------------------------------------------------------------------
+@dataclass
+class Ability:
+    name: str
+    handler: AbilityHandler
 
-def get_multiplier(attacking: str, defending: str) -> float:
-    """คืนค่าตัวคูณเมื่อ attacking_type โจมตี defending_type"""
-    return CHART.get(attacking, {}).get(defending, 1.0)
+def immune(t):
+    return lambda atk, mult: 0.0 if atk == t else mult
 
+def modify(t, factor):
+    return lambda atk, mult: mult * factor if atk == t else mult
 
-def calc_effectiveness(type1: str, type2: str | None = None) -> dict[float, list[str]]:
-    """
-    คำนวณค่าตัวคูณของทุกธาตุที่โจมตีโปเกม่อนซึ่งมีธาตุ type1 (และ type2)
+DEF_ABILITIES = {
+    "Levitate": Ability("Levitate", immune("Ground")),
+    "Volt Absorb": Ability("Volt Absorb", immune("Electric")),
+    "Water Absorb": Ability("Water Absorb", immune("Water")),
+    "Flash Fire": Ability("Flash Fire", immune("Fire")),
+    "Thick Fat": Ability("Thick Fat", lambda atk, m: m*0.5 if atk in ["Fire","Ice"] else m),
+    "Filter": Ability("Filter", lambda atk, m: m*0.75 if m>1 else m),
+    "Solid Rock": Ability("Solid Rock", lambda atk, m: m*0.75 if m>1 else m),
+}
 
-    Returns:
-        dict ที่ key คือตัวคูณ (4, 2, 1, 0.5, 0.25, 0) และ value คือ list ของธาตุ
-    """
-    buckets: dict[float, list[str]] = {4.0: [], 2.0: [], 1.0: [], 0.5: [], 0.25: [], 0.0: []}
+ATK_ABILITIES = {
+    "Scrappy": Ability("Scrappy", lambda atk, m: 1.0 if atk in ["Normal","Fighting"] and m==0 else m),
+    "Tinted Lens": Ability("Tinted Lens", lambda atk, m: m*2 if m<1 else m),
+}
 
-    for attacking in ALL_TYPES:
-        mult = get_multiplier(attacking, type1)
-        if type2:
-            mult *= get_multiplier(attacking, type2)
+# =========================
+# CALC
+# =========================
+def get_mult(atk, d1, d2):
+    m = CHART.get(atk, {}).get(d1, 1)
+    if d2:
+        m *= CHART.get(atk, {}).get(d2, 1)
+    return m
 
-        # ปัดเศษเพื่อหลีกเลี่ยง floating-point error
-        mult = round(mult, 4)
+def calc(d1, d2, def_ab, atk_ab):
+    results = {}
 
-        if mult not in buckets:
-            buckets[mult] = []
-        buckets[mult].append(attacking)
+    for atk in ALL_TYPES:
+        mult = get_mult(atk, d1, d2)
 
-    return buckets
+        if atk_ab:
+            mult = atk_ab.handler(atk, mult)
 
+        if def_ab:
+            mult = def_ab.handler(atk, mult)
 
-def normalize_type(raw: str) -> str | None:
-    """แปลง input ให้ตรงกับชื่อธาตุมาตรฐาน (case-insensitive)"""
-    raw = raw.strip().capitalize()
-    return raw if raw in CHART else None
+        results[atk] = round(mult, 2)
 
+    return results
 
-def print_results(type1: str, type2: str | None, buckets: dict[float, list[str]]) -> None:
-    """แสดงผลลัพธ์อย่างสวยงาม"""
-    type_label = f"{type1}/{type2}" if type2 else type1
-    print(f"\n{'=' * 50}")
-    print(f"  Pokemon Type: {type_label}")
-    print(f"{'=' * 50}")
+# =========================
+# UI
+# =========================
+st.set_page_config(page_title="Pokemon Type Checker", layout="centered")
 
-    display_order = [
-        (4.0,  "4×   อ่อนแอมาก  (Super effective x2)"),
-        (2.0,  "2×   อ่อนแอ     (Super effective)"),
-        (0.0,  "0×   ภูมิคุ้มกัน (Immune)"),
-        (0.5,  "½×   ทนทาน      (Not very effective)"),
-        (0.25, "¼×   ทนทานมาก  (Not very effective x2)"),
-    ]
+st.title("⚡ Pokemon Type Checker (Mobile UI)")
 
-    for mult, header in display_order:
-        types = buckets.get(mult, [])
-        if types:
-            print(f"\n  {header}")
-            print(f"  └─ {', '.join(types)}")
+col1, col2 = st.columns(2)
 
-    normal_types = buckets.get(1.0, [])
-    if normal_types:
-        print(f"\n  1×   ปกติ      (Normal)")
-        print(f"  └─ {', '.join(normal_types)}")
+with col1:
+    type1 = st.selectbox("Type 1", ALL_TYPES)
 
-    print()
+with col2:
+    type2 = st.selectbox("Type 2 (optional)", ["None"] + ALL_TYPES)
 
+def_ab = st.selectbox("Defender Ability", ["None"] + list(DEF_ABILITIES.keys()))
+atk_ab = st.selectbox("Attacker Ability", ["None"] + list(ATK_ABILITIES.keys()))
 
-def list_all_types() -> None:
-    """แสดงรายการธาตุทั้งหมดที่รองรับ"""
-    print("\nธาตุที่รองรับทั้งหมด (18 ธาตุ):")
-    for i, t in enumerate(ALL_TYPES, 1):
-        print(f"  {i:2}. {t}")
-    print()
+if st.button("Calculate"):
+    d2 = None if type2 == "None" else type2
+    da = DEF_ABILITIES.get(def_ab)
+    aa = ATK_ABILITIES.get(atk_ab)
 
+    result = calc(type1, d2, da, aa)
 
-def main() -> None:
-    print("=" * 50)
-    print("  Pokemon Type Effectiveness Checker")
-    print("  Generation 6+ (18 types)")
-    print("=" * 50)
-    print("\nพิมพ์ 'list' เพื่อดูธาตุทั้งหมด หรือ 'quit' เพื่อออก")
+    st.subheader("Result")
 
-    while True:
-        print()
-        raw1 = input("ธาตุที่ 1: ").strip()
+    buckets = {}
+    for t, m in result.items():
+        buckets.setdefault(m, []).append(t)
 
-        if raw1.lower() == "quit":
-            print("ออกจากโปรแกรม")
-            break
-        if raw1.lower() == "list":
-            list_all_types()
-            continue
+    order = [4,2,1,0.5,0.25,0]
 
-        type1 = normalize_type(raw1)
-        if not type1:
-            print(f"  [!] ไม่พบธาตุ '{raw1}' กรุณาลองใหม่ หรือพิมพ์ 'list' เพื่อดูรายการ")
-            continue
-
-        raw2 = input("ธาตุที่ 2 (กด Enter เพื่อข้าม): ").strip()
-        type2 = None
-        if raw2:
-            type2 = normalize_type(raw2)
-            if not type2:
-                print(f"  [!] ไม่พบธาตุ '{raw2}' จะใช้แค่ธาตุเดียว")
-            elif type2 == type1:
-                print("  [!] ธาตุที่ 2 ซ้ำกับธาตุที่ 1 จะใช้แค่ธาตุเดียว")
-                type2 = None
-
-        buckets = calc_effectiveness(type1, type2)
-        print_results(type1, type2, buckets)
-
-        again = input("เช็คธาตุอื่นอีกไหม? (y/n): ").strip().lower()
-        if again != "y":
-            print("ออกจากโปรแกรม")
-            break
-
-
-if __name__ == "__main__":
-    main()
+    for m in order:
+        if m in buckets:
+            st.markdown(f"### {m}x")
+            st.write(", ".join(buckets[m]))
