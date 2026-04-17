@@ -27,7 +27,7 @@ CHART = {
 
 ALL_TYPES = sorted(CHART.keys())
 
-def get_effectiveness(def_types):
+def get_defensive_effectiveness(def_types):
     results = {}
     for atk_type in ALL_TYPES:
         mult = 1.0
@@ -41,20 +41,21 @@ def get_effectiveness(def_types):
 # ==========================================
 st.set_page_config(page_title="Pokemon Data Center", layout="wide")
 
-# CSS สำหรับตกแต่งตารางและไฮไลท์สีตัวหนังสือ
 st.markdown("""
     <style>
-    .meta-move-text { color: #ff4b4b; font-weight: bold; }
-    .scroll-container { max-height: 400px; overflow-y: auto; border: 1px solid #f0f2f6; border-radius: 5px; }
-    table { width: 100%; border-collapse: collapse; }
-    th { background-color: #f0f2f6; position: sticky; top: 0; padding: 10px; text-align: left; z-index: 10; }
-    td { padding: 8px; border-bottom: 1px solid #eee; }
+    .stat-table { width: 100%; border-collapse: collapse; }
+    .offensive-card { 
+        padding: 15px; 
+        border-radius: 10px; 
+        background-color: #f8f9fa; 
+        border-left: 5px solid #ff4b4b;
+        margin-bottom: 10px;
+    }
     </style>
     """, unsafe_allow_html=True)
 
 st.title("🔍 Pokemon Comprehensive Database")
 
-# ดึงรายชื่อทั้งหมดสำหรับ Search
 @st.cache_data
 def get_all_pokemon_names():
     try:
@@ -84,7 +85,6 @@ if selected_name:
                 st.subheader("🧬 Abilities")
                 for ab in data['abilities']:
                     ab_info = requests.get(ab['ability']['url']).json()
-                    # หาคำอธิบายภาษาอังกฤษ
                     desc = next((s['short_effect'] for s in ab_info['effect_entries'] if s['language']['name'] == 'en'), "No description available.")
                     name_display = ab['ability']['name'].replace('-', ' ').title()
                     
@@ -98,12 +98,12 @@ if selected_name:
             with col2:
                 # --- Stats แบบตาราง ---
                 st.subheader("📊 Base Stats")
-                stat_data = [{"Stat": s['stat']['name'].upper().replace('-', ' '), "Value": s['base_stat']} for s in data['stats']]
-                st.table(stat_data)
+                stat_df = [{"Stat": s['stat']['name'].upper().replace('-', ' '), "Value": s['base_stat']} for s in data['stats']]
+                st.table(stat_df)
 
-                # --- การแพ้ทาง ---
-                st.subheader("⚔️ การแพ้ทาง (Weaknesses)")
-                eff = get_effectiveness(types)
+                # --- การแพ้ทาง (Defensive) ---
+                st.subheader("🛡️ การป้องกัน (Defensive Weaknesses)")
+                eff = get_defensive_effectiveness(types)
                 w1, w2 = st.columns(2)
                 
                 weaks = {k: v for k, v in eff.items() if v > 1}
@@ -118,46 +118,29 @@ if selected_name:
                     for t, m in resists.items():
                         st.write(f"🟢 {t} (x{m})")
 
-            # --- ส่วนของ Moves (แก้ไขใหม่ให้เสถียร) ---
+            # --- ส่วนที่เพิ่มใหม่: จุดเด่นด้านการโจมตี (Offensive Strengths) ---
             st.divider()
-            st.subheader("🥋 Learnable Moves")
+            st.subheader("⚔️ จุดเด่นด้านการโจมตี (Offensive Strengths)")
+            st.write("แสดงธาตุที่โปเกมอนตัวนี้สามารถทำความเสียหายได้รุนแรง (x2.0)")
             
-            # รายชื่อท่าที่นิยม
-            popular_moves = ["Earthquake", "Thunderbolt", "Ice Beam", "Flamethrower", "Scald", "Toxic", "Recover", "Roost", "U-Turn", "Close Combat", "Surf"]
-            
-            # สร้างตาราง HTML ในรูปแบบ String ก่อนเพื่อความเสถียร
-            rows_html = ""
-            for m in data['moves']:
-                m_name = m['move']['name'].replace('-', ' ').title()
-                is_popular = m_name in popular_moves
-                
-                # ไฮไลท์สีแดงเฉพาะชื่อท่าถ้าเป็นท่านิยม
-                text_style = 'class="meta-move-text"' if is_popular else ""
-                status_label = "⭐ Popular" if is_popular else "-"
-                
-                rows_html += f"""
-                <tr>
-                    <td><span {text_style}>{m_name}</span></td>
-                    <td>{status_label}</td>
-                </tr>
-                """
-            
-            final_table_html = f"""
-            <div class="scroll-container">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Move Name</th>
-                            <th>Status</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {rows_html}
-                    </tbody>
-                </table>
-            </div>
-            """
-            
-            st.markdown(final_table_html, unsafe_allow_html=True)
+            off_cols = st.columns(len(types))
+            for i, t_name in enumerate(types):
+                with off_cols[i]:
+                    # ดึงข้อมูลจาก CHART ว่าธาตุนี้ชนะทางธาตุไหนบ้าง
+                    atk_logic = CHART.get(t_name, {})
+                    strong_against = [target for target, mult in atk_logic.items() if mult > 1.0]
+                    
+                    st.markdown(f"""
+                        <div class="offensive-card">
+                            <h4 style="margin:0;">ธาตุ {t_name}</h4>
+                            <p style="font-size: 0.9em; color: #666;">โจมตีแรงขึ้นกับธาตุต่อไปนี้:</p>
+                        </div>
+                    """, unsafe_allow_html=True)
+                    
+                    if strong_against:
+                        for s_type in strong_against:
+                            st.write(f"🔥 **{s_type}** (x2.0)")
+                    else:
+                        st.write("*(ไม่มีธาตุที่ชนะทางเป็นพิเศษ)*")
         else:
             st.error("ไม่พบข้อมูลโปเกมอนตัวนี้ กรุณาลองใหม่อีกครั้ง")
