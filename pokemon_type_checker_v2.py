@@ -1,5 +1,6 @@
 import streamlit as st
 import requests
+import pandas as pd
 
 # ==========================================
 # SECTION 1: Core Logic
@@ -37,29 +38,14 @@ def get_effectiveness(def_types):
     return results
 
 # ==========================================
-# SECTION 2: UI Setup
+# UI Setup
 # ==========================================
 st.set_page_config(page_title="Pokemon Data Center", layout="wide")
-
-st.markdown("""
-<style>
-.meta-move {
-    color: #ff4b4b;
-    font-weight: bold;
-    background-color: rgba(255,75,75,0.1);
-    padding: 2px 6px;
-    border-radius: 6px;
-}
-tr:hover {
-    background-color: #f9f9f9;
-}
-</style>
-""", unsafe_allow_html=True)
 
 st.title("🔍 Pokemon Comprehensive Database")
 
 # ==========================================
-# SECTION 3: Data
+# Data
 # ==========================================
 @st.cache_data
 def get_all_pokemon_names():
@@ -74,7 +60,7 @@ poke_list = get_all_pokemon_names()
 selected_name = st.selectbox("พิมพ์ชื่อโปเกมอนเพื่อค้นหา:", [""] + poke_list)
 
 # ==========================================
-# SECTION 4: Display
+# Display
 # ==========================================
 if selected_name:
     with st.spinner('กำลังดึงข้อมูล...'):
@@ -95,47 +81,34 @@ if selected_name:
                 desc = next((s['short_effect'] for s in ab_info['effect_entries'] if s['language']['name'] == 'en'), "No description available.")
 
                 name_display = ab['ability']['name'].replace('-', ' ').title()
-                if ab['is_hidden']:
-                    st.markdown(f"**{name_display}** *(Hidden Ability)*")
-                else:
-                    st.markdown(f"**{name_display}**")
-
+                st.markdown(f"**{name_display}**{' *(Hidden)*' if ab['is_hidden'] else ''}")
                 st.caption(desc)
                 st.write("---")
 
         with col2:
             st.subheader("📊 Base Stats")
-            stat_data = [{"Stat": s['stat']['name'].upper().replace('-', ' '), "Value": s['base_stat']} for s in data['stats']]
+            stat_data = [{"Stat": s['stat']['name'].upper(), "Value": s['base_stat']} for s in data['stats']]
             st.table(stat_data)
 
-            st.subheader("⚔️ การแพ้ทาง (Weaknesses)")
+            st.subheader("⚔️ การแพ้ทาง")
             eff = get_effectiveness(types)
-
-            w1, w2 = st.columns(2)
 
             weaks = {k: v for k, v in eff.items() if v > 1}
             resists = {k: v for k, v in eff.items() if v < 1}
 
-            with w1:
-                st.markdown("**โดนโจมตีแรง (x2, x4):**")
-                for t, m in weaks.items():
-                    st.write(f"🔴 {t} (x{m})")
-
-            with w2:
-                st.markdown("**โดนโจมตีเบา/ไม่เข้า:**")
-                for t, m in resists.items():
-                    st.write(f"🟢 {t} (x{m})")
+            st.write("🔴 Weak:", weaks)
+            st.write("🟢 Resist:", resists)
 
         # ==========================================
-        # SECTION 5: Learnable Moves (แก้แล้ว)
+        # Learnable Moves (เสถียร)
         # ==========================================
         st.subheader("🥋 Learnable Moves")
 
         popular_moves = ["Earthquake", "Thunderbolt", "Ice Beam", "Flamethrower", "Scald", "Toxic", "Recover", "Roost", "U-Turn"]
 
-        search_move = st.text_input("🔎 ค้นหาท่า", "")
+        search_move = st.text_input("🔎 ค้นหาท่า")
 
-        table_body = ""
+        move_data = []
 
         for m in data['moves']:
             m_name = m['move']['name'].replace('-', ' ').title()
@@ -143,33 +116,20 @@ if selected_name:
             if search_move and search_move.lower() not in m_name.lower():
                 continue
 
-            is_popular = m_name in popular_moves
-            style = 'class="meta-move"' if is_popular else ""
-            status = "⭐ Popular" if is_popular else "<span style='color:#aaa;'>-</span>"
+            status = "⭐ Popular" if m_name in popular_moves else "-"
 
-            table_body += f"""
-            <tr>
-                <td style="padding: 8px; border-bottom: 1px solid #eee;">
-                    <span {style}>{m_name}</span>
-                </td>
-                <td style="padding: 8px; border-bottom: 1px solid #eee;">{status}</td>
-            </tr>
-            """
+            move_data.append({
+                "Move Name": m_name,
+                "Status": status
+            })
 
-        move_list_html = f"""
-        <div style="max-height:400px; overflow-y:auto; border:1px solid #eee; border-radius:6px;">
-        <table style="width:100%; border-collapse:collapse;">
-        <thead style="position:sticky; top:0; background:#f0f2f6;">
-        <tr>
-        <th style="padding:10px; text-align:left;">Move Name</th>
-        <th style="padding:10px; text-align:left;">Status</th>
-        </tr>
-        </thead>
-        <tbody>
-        {table_body}
-        </tbody>
-        </table>
-        </div>
-        """
+        df = pd.DataFrame(move_data)
 
-        st.markdown(move_list_html, unsafe_allow_html=True)
+        def highlight(val):
+            return "color:red; font-weight:bold" if "⭐" in str(val) else ""
+
+        st.dataframe(
+            df.style.applymap(highlight, subset=["Status"]),
+            use_container_width=True,
+            height=400
+        )
