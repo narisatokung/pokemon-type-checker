@@ -1,145 +1,98 @@
 import streamlit as st
 import requests
+import pandas as pd
+
+# --- ส่วน Logic เดิม (CHART และ get_effectiveness) คงไว้เหมือนเดิม ---
+# [ก๊อปปี้ CHART และ get_effectiveness จากโค้ดเดิมมาวาง]
 
 # ==========================================
-# SECTION 1: Core Logic (ดึงมาจากไฟล์ v2 ของคุณ)
+# SECTION: UI & Functions
 # ==========================================
-CHART = {
-    "Normal":   {"Rock": 0.5, "Ghost": 0.0, "Steel": 0.5},
-    "Fire":     {"Fire": 0.5, "Water": 0.5, "Grass": 2.0, "Ice": 2.0, "Bug": 2.0, "Rock": 0.5, "Dragon": 0.5, "Steel": 2.0},
-    "Water":    {"Fire": 2.0, "Water": 0.5, "Grass": 0.5, "Ground": 2.0, "Rock": 2.0, "Dragon": 0.5},
-    "Electric": {"Water": 2.0, "Electric": 0.5, "Grass": 0.5, "Ground": 0.0, "Flying": 2.0, "Dragon": 0.5},
-    "Grass":    {"Fire": 0.5, "Water": 2.0, "Grass": 0.5, "Poison": 0.5, "Ground": 2.0, "Flying": 0.5, "Bug": 0.5, "Rock": 2.0, "Dragon": 0.5, "Steel": 0.5},
-    "Ice":      {"Water": 0.5, "Grass": 2.0, "Ice": 0.5, "Ground": 2.0, "Flying": 2.0, "Dragon": 2.0, "Steel": 0.5},
-    "Fighting": {"Normal": 2.0, "Ice": 2.0, "Poison": 0.5, "Flying": 0.5, "Psychic": 0.5, "Bug": 0.5, "Rock": 2.0, "Ghost": 0.0, "Dark": 2.0, "Steel": 2.0, "Fairy": 0.5},
-    "Poison":   {"Grass": 2.0, "Poison": 0.5, "Ground": 0.5, "Rock": 0.5, "Ghost": 0.5, "Steel": 0.0, "Fairy": 2.0},
-    "Ground":   {"Fire": 2.0, "Electric": 2.0, "Grass": 0.5, "Poison": 2.0, "Flying": 0.0, "Bug": 0.5, "Rock": 2.0, "Steel": 2.0},
-    "Flying":   {"Electric": 0.5, "Grass": 2.0, "Fighting": 2.0, "Bug": 2.0, "Rock": 0.5, "Steel": 0.5},
-    "Psychic":  {"Fighting": 2.0, "Poison": 2.0, "Psychic": 0.5, "Dark": 0.0, "Steel": 0.5},
-    "Bug":      {"Fire": 0.5, "Grass": 2.0, "Fighting": 0.5, "Flying": 0.5, "Psychic": 2.0, "Ghost": 0.5, "Dark": 2.0, "Steel": 0.5, "Fairy": 0.5},
-    "Rock":     {"Fire": 2.0, "Ice": 2.0, "Fighting": 0.5, "Ground": 0.5, "Flying": 2.0, "Bug": 2.0, "Steel": 0.5},
-    "Ghost":    {"Normal": 0.0, "Psychic": 2.0, "Ghost": 2.0, "Dark": 0.5},
-    "Dragon":   {"Dragon": 2.0, "Steel": 0.5, "Fairy": 0.0},
-    "Dark":     {"Fighting": 0.5, "Psychic": 2.0, "Ghost": 2.0, "Dark": 0.5, "Fairy": 0.5},
-    "Steel":    {"Fire": 0.5, "Water": 0.5, "Electric": 0.5, "Ice": 2.0, "Rock": 2.0, "Steel": 0.5, "Fairy": 2.0},
-    "Fairy":    {"Fire": 0.5, "Fighting": 2.0, "Poison": 0.5, "Dragon": 2.0, "Dark": 2.0, "Steel": 0.5},
-}
+st.set_page_config(page_title="Pokemon Master Tool", layout="wide")
 
-ALL_TYPES = sorted(CHART.keys())
+st.title("🛡️ Pokemon Comprehensive Database")
 
-def get_effectiveness(def_types):
-    results = {}
-    for atk_type in ALL_TYPES:
-        mult = 1.0
-        for def_type in def_types:
-            mult *= CHART.get(atk_type, {}).get(def_type, 1.0)
-        results[atk_type] = mult
-    return results
-
-# ==========================================
-# SECTION 2: UI Setup
-# ==========================================
-st.set_page_config(page_title="Pokemon Data Center", layout="wide")
-
-st.markdown("""
-    <style>
-    .meta-move { color: #ff4b4b; font-weight: bold; }
-    .stat-table { width: 100%; border-collapse: collapse; }
-    .type-pill { padding: 2px 10px; border-radius: 15px; margin-right: 5px; color: white; font-size: 0.8em; }
-    </style>
-    """, unsafe_allow_html=True)
-
-st.title("🔍 Pokemon Comprehensive Database")
-
-# ดึงรายชื่อทั้งหมดสำหรับ Search
 @st.cache_data
 def get_all_pokemon_names():
-    res = requests.get("https://pokeapi.co/api/v2/pokemon?limit=1500").json()
-    return [p['name'].capitalize() for p in res['results']]
+    try:
+        res = requests.get("https://pokeapi.co/api/v2/pokemon?limit=1500").json()
+        return [p['name'].capitalize() for p in res['results']]
+    except:
+        return []
 
 poke_list = get_all_pokemon_names()
-selected_name = st.selectbox("พิมพ์ชื่อโปเกมอนเพื่อค้นหา:", [""] + poke_list)
+selected_name = st.selectbox("ค้นหาชื่อโปเกมอน:", [""] + poke_list)
 
 if selected_name:
-    with st.spinner('กำลังดึงข้อมูล...'):
-        data = requests.get(f"https://pokeapi.co/api/v2/pokemon/{selected_name.lower()}").json()
-        
-        col1, col2 = st.columns([1, 2])
-        
-        with col1:
-            st.image(data['sprites']['other']['official-artwork']['front_default'], use_container_width=True)
-            st.header(selected_name)
-            types = [t['type']['name'].capitalize() for t in data['types']]
-            st.write("ธาตุ: " + " / ".join(types))
+    with st.spinner('กำลังโหลดข้อมูล...'):
+        response = requests.get(f"https://pokeapi.co/api/v2/pokemon/{selected_name.lower()}")
+        if response.status_code == 200:
+            data = response.json()
             
-            # 1. & 5. Abilities พร้อมคำอธิบาย
-            st.subheader("🧬 Abilities")
-            for ab in data['abilities']:
-                ab_info = requests.get(ab['ability']['url']).json()
-                # หาคำอธิบายภาษาอังกฤษ
-                desc = next((s['short_effect'] for s in ab_info['effect_entries'] if s['language']['name'] == 'en'), "No description available.")
+            col1, col2 = st.columns([1, 2])
+            
+            with col1:
+                st.image(data['sprites']['other']['official-artwork']['front_default'], use_container_width=True)
+                st.header(selected_name)
+                types = [t['type']['name'].capitalize() for t in data['types']]
+                st.write(f"**ธาตุ:** {' / '.join(types)}")
                 
-                name_display = ab['ability']['name'].replace('-', ' ').title()
-                if ab['is_hidden']:
-                    st.markdown(f"**{name_display}** *(Hidden Ability)*")
-                else:
-                    st.markdown(f"**{name_display}**")
-                st.caption(desc)
-                st.write("---")
+                # --- Ability & Description ---
+                st.subheader("🧬 Abilities")
+                for ab in data['abilities']:
+                    ab_res = requests.get(ab['ability']['url']).json()
+                    desc = next((s['short_effect'] for s in ab_res['effect_entries'] if s['language']['name'] == 'en'), "ไม่มีคำอธิบาย")
+                    name = ab['ability']['name'].replace('-', ' ').title()
+                    st.markdown(f"**{name}** {'*(Hidden)*' if ab['is_hidden'] else ''}")
+                    st.caption(desc)
 
-        with col2:
-            # 3. Stats แบบตาราง
-            st.subheader("📊 Base Stats")
-            stat_data = [{"Stat": s['stat']['name'].upper().replace('-', ' '), "Value": s['base_stat']} for s in data['stats']]
-            st.table(stat_data)
+            with col2:
+                # --- Stats Table (ปรับเป็นตารางตามโจทย์) ---
+                st.subheader("📊 Base Stats")
+                stats_list = [{"Status": s['stat']['name'].upper(), "Value": s['base_stat']} for s in data['stats']]
+                st.table(pd.DataFrame(stats_list))
 
-            # 2. Type Effectiveness
-            st.subheader("⚔️ การแพ้ทาง (Weaknesses)")
-            eff = get_effectiveness(types)
-            w1, w2 = st.columns(2)
-            
-            weaks = {k: v for k, v in eff.items() if v > 1}
-            resists = {k: v for k, v in eff.items() if v < 1}
-            
-            with w1:
-                st.markdown("**โดนโจมตีแรง (x2, x4):**")
-                for t, m in weaks.items():
-                    st.write(f"🔴 {t} (x{m})")
-            with w2:
-                st.markdown("**โดนโจมตีเบา/ไม่เข้า:**")
-                for t, m in resists.items():
-                    st.write(f"🟢 {t} (x{m})")
+                # --- Effectiveness ---
+                st.subheader("⚔️ Weaknesses")
+                eff = get_effectiveness(types)
+                w1, w2 = st.columns(2)
+                with w1:
+                    st.error("แพ้ทาง (x2, x4)")
+                    for t, m in eff.items():
+                        if m > 1: st.write(f"{t} (x{m})")
+                with w2:
+                    st.success("ต้านทาน (x0.5, x0)")
+                    for t, m in eff.items():
+                        if m < 1: st.write(f"{t} (x{m})")
 
-        # 6. Moves Table พร้อมไฮไลท์ตัวหนังสือ
-        st.subheader("🥋 Learnable Moves")
-        # รายชื่อท่าที่นิยม (ตัวอย่าง)
-        popular_moves = ["Earthquake", "Thunderbolt", "Ice Beam", "Flamethrower", "Scald", "Toxic", "Recover", "Roost", "U-Turn"]
-        
-        move_list_html = """
-        <table style="width:100%; border: 1px solid #f0f2f6;">
-            <thead><tr style="background-color: #f0f2f6;">
-                <th style="padding: 10px; text-align: left;">Move Name</th>
-                <th style="padding: 10px; text-align: left;">Status</th>
-            </tr></thead>
-            <tbody>
-        """
-        
-        for m in data['moves']:
-            m_name = m['move']['name'].replace('-', ' ').title()
-            is_popular = m_name in popular_moves
-            style = 'class="meta-move"' if is_popular else ""
-            status = "⭐ Popular" if is_popular else "-"
+            # --- 🔥 แก้ไขส่วน Move List (ใช้ DataFrame Styling) ---
+            st.divider()
+            st.subheader("🥋 Learnable Moves (ไฮไลท์ท่าที่นิยม)")
             
-            move_list_html += f"""
-                <tr>
-                    <td style="padding: 8px; border-bottom: 1px solid #eee;">
-                        <span {style}>{m_name}</span>
-                    </td>
-                    <td style="padding: 8px; border-bottom: 1px solid #eee;">{status}</td>
-                </tr>
-            """
-        
-        move_list_html += "</tbody></table>"
-        
-        # แสดงตารางด้วยการฉีด HTML (ใช้ scroll container เพื่อไม่ให้ยาวเกินไป)
-        st.markdown(f'<div style="max-height: 400px; overflow-y: auto;">{move_list_html}</div>', unsafe_allow_html=True)
+            # รายชื่อท่าที่นิยม
+            popular_moves = ["Earthquake", "Thunderbolt", "Ice Beam", "Flamethrower", "Scald", "Toxic", "Recover", "Roost", "U-Turn", "Close Combat", "Surfing"]
+
+            # สร้าง List ข้อมูล Move
+            moves_data = []
+            for m in data['moves']:
+                m_name = m['move']['name'].replace('-', ' ').title()
+                is_popular = "⭐ Popular" if m_name in popular_moves else "-"
+                moves_data.append({"Move Name": m_name, "Status": is_popular})
+
+            df_moves = pd.DataFrame(moves_data)
+
+            # ฟังก์ชันสำหรับไฮไลท์ตัวหนังสือสีแดง
+            def highlight_popular(row):
+                if row['Status'] == "⭐ Popular":
+                    return ['color: #ff4b4b; font-weight: bold;'] * len(row)
+                return [''] * len(row)
+
+            # แสดงตารางแบบ Interactive พร้อมไฮไลท์
+            st.dataframe(
+                df_moves.style.apply(highlight_popular, axis=1),
+                use_container_width=True,
+                height=400,
+                hide_index=True
+            )
+        else:
+            st.error("ไม่พบข้อมูลโปเกมอนตัวนี้")
