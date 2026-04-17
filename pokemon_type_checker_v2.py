@@ -127,7 +127,7 @@ if selected_name:
                     st.write(f"🟢 {t} (x{m})")
 
         # ==========================================
-        # SECTION 5: Learnable Moves (ปรับปรุงแล้ว)
+        # SECTION 5: Learnable Moves (แก้แล้ว)
         # ==========================================
         st.subheader("🥋 Learnable Moves")
 
@@ -135,17 +135,7 @@ if selected_name:
 
         search_move = st.text_input("🔎 ค้นหาท่า", "")
 
-        move_list_html = """
-        <div style="max-height: 400px; overflow-y: auto;">
-        <table style="width:100%; border-collapse: collapse;">
-        <thead style="position: sticky; top: 0; background-color: #f0f2f6; z-index:1;">
-        <tr>
-        <th style="padding: 10px; text-align: left;">Move Name</th>
-        <th style="padding: 10px; text-align: left;">Status</th>
-        </tr>
-        </thead>
-        <tbody>
-        """
+        table_body = ""
 
         for m in data['moves']:
             m_name = m['move']['name'].replace('-', ' ').title()
@@ -157,7 +147,7 @@ if selected_name:
             style = 'class="meta-move"' if is_popular else ""
             status = "⭐ Popular" if is_popular else "<span style='color:#aaa;'>-</span>"
 
-            move_list_html += f"""
+            table_body += f"""
             <tr>
                 <td style="padding: 8px; border-bottom: 1px solid #eee;">
                     <span {style}>{m_name}</span>
@@ -166,6 +156,20 @@ if selected_name:
             </tr>
             """
 
-        move_list_html += "</tbody></table></div>"
+        move_list_html = f"""
+        <div style="max-height:400px; overflow-y:auto; border:1px solid #eee; border-radius:6px;">
+        <table style="width:100%; border-collapse:collapse;">
+        <thead style="position:sticky; top:0; background:#f0f2f6;">
+        <tr>
+        <th style="padding:10px; text-align:left;">Move Name</th>
+        <th style="padding:10px; text-align:left;">Status</th>
+        </tr>
+        </thead>
+        <tbody>
+        {table_body}
+        </tbody>
+        </table>
+        </div>
+        """
 
         st.markdown(move_list_html, unsafe_allow_html=True)
