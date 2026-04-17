@@ -2,7 +2,7 @@ import streamlit as st
 import requests
 
 # ==========================================
-# SECTION 1: Core Logic (ดึงมาจากไฟล์ v2 ของคุณ)
+# SECTION 1: Core Logic (Gen 6+ Type Chart)
 # ==========================================
 CHART = {
     "Normal":   {"Rock": 0.5, "Ghost": 0.0, "Steel": 0.5},
@@ -37,15 +37,18 @@ def get_effectiveness(def_types):
     return results
 
 # ==========================================
-# SECTION 2: UI Setup
+# SECTION 2: UI Setup & CSS
 # ==========================================
 st.set_page_config(page_title="Pokemon Data Center", layout="wide")
 
+# CSS สำหรับตกแต่งตารางและไฮไลท์สีตัวหนังสือ
 st.markdown("""
     <style>
-    .meta-move { color: #ff4b4b; font-weight: bold; }
-    .stat-table { width: 100%; border-collapse: collapse; }
-    .type-pill { padding: 2px 10px; border-radius: 15px; margin-right: 5px; color: white; font-size: 0.8em; }
+    .meta-move-text { color: #ff4b4b; font-weight: bold; }
+    .scroll-container { max-height: 400px; overflow-y: auto; border: 1px solid #f0f2f6; border-radius: 5px; }
+    table { width: 100%; border-collapse: collapse; }
+    th { background-color: #f0f2f6; position: sticky; top: 0; padding: 10px; text-align: left; z-index: 10; }
+    td { padding: 8px; border-bottom: 1px solid #eee; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -54,92 +57,107 @@ st.title("🔍 Pokemon Comprehensive Database")
 # ดึงรายชื่อทั้งหมดสำหรับ Search
 @st.cache_data
 def get_all_pokemon_names():
-    res = requests.get("https://pokeapi.co/api/v2/pokemon?limit=1500").json()
-    return [p['name'].capitalize() for p in res['results']]
+    try:
+        res = requests.get("https://pokeapi.co/api/v2/pokemon?limit=1500").json()
+        return [p['name'].capitalize() for p in res['results']]
+    except:
+        return []
 
 poke_list = get_all_pokemon_names()
 selected_name = st.selectbox("พิมพ์ชื่อโปเกมอนเพื่อค้นหา:", [""] + poke_list)
 
 if selected_name:
     with st.spinner('กำลังดึงข้อมูล...'):
-        data = requests.get(f"https://pokeapi.co/api/v2/pokemon/{selected_name.lower()}").json()
-        
-        col1, col2 = st.columns([1, 2])
-        
-        with col1:
-            st.image(data['sprites']['other']['official-artwork']['front_default'], use_container_width=True)
-            st.header(selected_name)
-            types = [t['type']['name'].capitalize() for t in data['types']]
-            st.write("ธาตุ: " + " / ".join(types))
+        response = requests.get(f"https://pokeapi.co/api/v2/pokemon/{selected_name.lower()}")
+        if response.status_code == 200:
+            data = response.json()
             
-            # 1. & 5. Abilities พร้อมคำอธิบาย
-            st.subheader("🧬 Abilities")
-            for ab in data['abilities']:
-                ab_info = requests.get(ab['ability']['url']).json()
-                # หาคำอธิบายภาษาอังกฤษ
-                desc = next((s['short_effect'] for s in ab_info['effect_entries'] if s['language']['name'] == 'en'), "No description available.")
+            col1, col2 = st.columns([1, 2])
+            
+            with col1:
+                st.image(data['sprites']['other']['official-artwork']['front_default'], use_container_width=True)
+                st.header(selected_name)
+                types = [t['type']['name'].capitalize() for t in data['types']]
+                st.write(f"**ธาตุ:** {' / '.join(types)}")
                 
-                name_display = ab['ability']['name'].replace('-', ' ').title()
-                if ab['is_hidden']:
-                    st.markdown(f"**{name_display}** *(Hidden Ability)*")
-                else:
-                    st.markdown(f"**{name_display}**")
-                st.caption(desc)
-                st.write("---")
+                # --- Abilities พร้อมคำอธิบาย ---
+                st.subheader("🧬 Abilities")
+                for ab in data['abilities']:
+                    ab_info = requests.get(ab['ability']['url']).json()
+                    # หาคำอธิบายภาษาอังกฤษ
+                    desc = next((s['short_effect'] for s in ab_info['effect_entries'] if s['language']['name'] == 'en'), "No description available.")
+                    name_display = ab['ability']['name'].replace('-', ' ').title()
+                    
+                    if ab['is_hidden']:
+                        st.markdown(f"**{name_display}** *(Hidden Ability)*")
+                    else:
+                        st.markdown(f"**{name_display}**")
+                    st.caption(desc)
+                    st.write("---")
 
-        with col2:
-            # 3. Stats แบบตาราง
-            st.subheader("📊 Base Stats")
-            stat_data = [{"Stat": s['stat']['name'].upper().replace('-', ' '), "Value": s['base_stat']} for s in data['stats']]
-            st.table(stat_data)
+            with col2:
+                # --- Stats แบบตาราง ---
+                st.subheader("📊 Base Stats")
+                stat_data = [{"Stat": s['stat']['name'].upper().replace('-', ' '), "Value": s['base_stat']} for s in data['stats']]
+                st.table(stat_data)
 
-            # 2. Type Effectiveness
-            st.subheader("⚔️ การแพ้ทาง (Weaknesses)")
-            eff = get_effectiveness(types)
-            w1, w2 = st.columns(2)
-            
-            weaks = {k: v for k, v in eff.items() if v > 1}
-            resists = {k: v for k, v in eff.items() if v < 1}
-            
-            with w1:
-                st.markdown("**โดนโจมตีแรง (x2, x4):**")
-                for t, m in weaks.items():
-                    st.write(f"🔴 {t} (x{m})")
-            with w2:
-                st.markdown("**โดนโจมตีเบา/ไม่เข้า:**")
-                for t, m in resists.items():
-                    st.write(f"🟢 {t} (x{m})")
+                # --- การแพ้ทาง ---
+                st.subheader("⚔️ การแพ้ทาง (Weaknesses)")
+                eff = get_effectiveness(types)
+                w1, w2 = st.columns(2)
+                
+                weaks = {k: v for k, v in eff.items() if v > 1}
+                resists = {k: v for k, v in eff.items() if v < 1}
+                
+                with w1:
+                    st.markdown("**โดนโจมตีแรง (x2, x4):**")
+                    for t, m in weaks.items():
+                        st.write(f"🔴 {t} (x{m})")
+                with w2:
+                    st.markdown("**โดนโจมตีเบา/ไม่เข้า:**")
+                    for t, m in resists.items():
+                        st.write(f"🟢 {t} (x{m})")
 
-        # 6. Moves Table พร้อมไฮไลท์ตัวหนังสือ
-        st.subheader("🥋 Learnable Moves")
-        # รายชื่อท่าที่นิยม (ตัวอย่าง)
-        popular_moves = ["Earthquake", "Thunderbolt", "Ice Beam", "Flamethrower", "Scald", "Toxic", "Recover", "Roost", "U-Turn"]
-        
-        move_list_html = """
-        <table style="width:100%; border: 1px solid #f0f2f6;">
-            <thead><tr style="background-color: #f0f2f6;">
-                <th style="padding: 10px; text-align: left;">Move Name</th>
-                <th style="padding: 10px; text-align: left;">Status</th>
-            </tr></thead>
-            <tbody>
-        """
-        
-        for m in data['moves']:
-            m_name = m['move']['name'].replace('-', ' ').title()
-            is_popular = m_name in popular_moves
-            style = 'class="meta-move"' if is_popular else ""
-            status = "⭐ Popular" if is_popular else "-"
+            # --- ส่วนของ Moves (แก้ไขใหม่ให้เสถียร) ---
+            st.divider()
+            st.subheader("🥋 Learnable Moves")
             
-            move_list_html += f"""
+            # รายชื่อท่าที่นิยม
+            popular_moves = ["Earthquake", "Thunderbolt", "Ice Beam", "Flamethrower", "Scald", "Toxic", "Recover", "Roost", "U-Turn", "Close Combat", "Surf"]
+            
+            # สร้างตาราง HTML ในรูปแบบ String ก่อนเพื่อความเสถียร
+            rows_html = ""
+            for m in data['moves']:
+                m_name = m['move']['name'].replace('-', ' ').title()
+                is_popular = m_name in popular_moves
+                
+                # ไฮไลท์สีแดงเฉพาะชื่อท่าถ้าเป็นท่านิยม
+                text_style = 'class="meta-move-text"' if is_popular else ""
+                status_label = "⭐ Popular" if is_popular else "-"
+                
+                rows_html += f"""
                 <tr>
-                    <td style="padding: 8px; border-bottom: 1px solid #eee;">
-                        <span {style}>{m_name}</span>
-                    </td>
-                    <td style="padding: 8px; border-bottom: 1px solid #eee;">{status}</td>
+                    <td><span {text_style}>{m_name}</span></td>
+                    <td>{status_label}</td>
                 </tr>
+                """
+            
+            final_table_html = f"""
+            <div class="scroll-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Move Name</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {rows_html}
+                    </tbody>
+                </table>
+            </div>
             """
-        
-        move_list_html += "</tbody></table>"
-        
-        # แสดงตารางด้วยการฉีด HTML (ใช้ scroll container เพื่อไม่ให้ยาวเกินไป)
-        st.markdown(f'<div style="max-height: 400px; overflow-y: auto;">{move_list_html}</div>', unsafe_allow_html=True)
+            
+            st.markdown(final_table_html, unsafe_allow_html=True)
+        else:
+            st.error("ไม่พบข้อมูลโปเกมอนตัวนี้ กรุณาลองใหม่อีกครั้ง")
